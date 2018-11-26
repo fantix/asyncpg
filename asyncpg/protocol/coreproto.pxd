@@ -76,11 +76,6 @@ cdef class CoreProtocol:
         bint _skip_discard
         bint _discard_data
 
-        # executemany support data
-        object _execute_iter
-        str _execute_portal_name
-        str _execute_stmt_name
-
         ConnectionStatus con_status
         ProtocolState state
         TransactionStatus xact_status
@@ -105,6 +100,7 @@ cdef class CoreProtocol:
         # True - completed, False - suspended
         bint result_execute_completed
 
+    cpdef is_in_transaction(self)
     cdef _process__auth(self, char mtype)
     cdef _process__prepare(self, char mtype)
     cdef _process__bind_execute(self, char mtype)
@@ -135,6 +131,7 @@ cdef class CoreProtocol:
     cdef _auth_password_message_md5(self, bytes salt)
 
     cdef _write(self, buf)
+    cdef _writelines(self, list buffers)
 
     cdef _read_server_messages(self)
 
@@ -144,9 +141,13 @@ cdef class CoreProtocol:
 
     cdef _ensure_connected(self)
 
+    cdef WriteBuffer _build_parse_message(self, str stmt_name, str query)
     cdef WriteBuffer _build_bind_message(self, str portal_name,
                                          str stmt_name,
                                          WriteBuffer bind_data)
+    cdef WriteBuffer _build_empty_bind_data(self)
+    cdef WriteBuffer _build_execute_message(self, str portal_name,
+                                            int32_t limit)
 
 
     cdef _connect(self)
@@ -155,8 +156,11 @@ cdef class CoreProtocol:
                             WriteBuffer bind_data, int32_t limit)
     cdef _bind_execute(self, str portal_name, str stmt_name,
                        WriteBuffer bind_data, int32_t limit)
-    cdef _bind_execute_many(self, str portal_name, str stmt_name,
-                            object bind_data)
+    cdef _execute_many_init(self)
+    cdef _execute_many_writelines(self, str portal_name, str stmt_name,
+                                  object bind_data)
+    cdef _execute_many_done(self, bint data_sent)
+    cdef _execute_many_fail(self, object error)
     cdef _bind(self, str portal_name, str stmt_name,
                WriteBuffer bind_data)
     cdef _execute(self, str portal_name, int32_t limit)

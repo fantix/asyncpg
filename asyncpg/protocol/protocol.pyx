@@ -122,11 +122,6 @@ cdef class BaseProtocol(CoreProtocol):
     def get_settings(self):
         return self.settings
 
-    def is_in_transaction(self):
-        # PQTRANS_INTRANS = idle, within transaction block
-        # PQTRANS_INERROR = idle, within failed transaction
-        return self.xact_status in (PQTRANS_INTRANS, PQTRANS_INERROR)
-
     cdef inline resume_reading(self):
         if not self.is_reading:
             self.is_reading = True
@@ -216,15 +211,27 @@ cdef class BaseProtocol(CoreProtocol):
 
         waiter = self._new_waiter(timeout)
         try:
-            self._bind_execute_many(
-                portal_name,
-                state.name,
-                arg_bufs)  # network op
-
+            self._execute_many_init()
             self.last_query = state.query
             self.statement = state
             self.return_extra = False
             self.queries_count += 1
+
+            data_sent = False
+            while True:
+                self._execute_many_writelines(
+                    portal_name,
+                    state.name,
+                    arg_bufs)  # network op
+                data_sent = True
+                await self.writing_allowed.wait()
+        except StopIteration as ex:
+            if ex.value is True:
+                self._execute_many_done(True)  # network op
+            elif ex.value is False:
+                self._execute_many_done(data_sent)  # network op
+            else:
+                self._execute_many_fail(ex.value)  # network op
         except Exception as ex:
             waiter.set_exception(ex)
             self._coreproto_error()
@@ -879,6 +886,9 @@ cdef class BaseProtocol(CoreProtocol):
 
     cdef _write(self, buf):
         self.transport.write(memoryview(buf))
+
+    cdef _writelines(self, list buffers):
+        self.transport.writelines(buffers)
 
     # asyncio callbacks:
 
